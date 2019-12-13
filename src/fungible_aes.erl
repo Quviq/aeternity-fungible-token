@@ -16,12 +16,10 @@ ct_file() ->
     Ebin = filename:dirname(code:which(sophia_eqc)),
     filename:join([Ebin, "..", "contracts", "fungible-token.aes"]).
 
-%% Assume we can generate the following from:
-%% aeso_aci:file(json, fungible_aes:ct_file()).
-
--record(state, {owner, total_supply, balances, meta_info}).
 
 %% Generated to simplify modeling, possibly dynamically done??
+-record(state, {owner, total_supply, balances, meta_info}).
+
 state_to_erlang(Fate) ->
     {tuple, {Owner,
              Total_supply,
@@ -31,10 +29,16 @@ state_to_erlang(Fate) ->
            balances = Balances,
            meta_info = Meta_info}.
 
+%% User spec below
 
 init_args(_ChainState) ->
-    [non_empty(string()), fate_nat(), non_empty(string()), fate_option(choose(-1,10))].
+    [string(), fate_nat(), non_empty(string()), fate_option(choose(-1, 10))].
 
+init_valid(_ChainState, [Name, Decimal, Symbol, InitBalance] = Args) ->
+    case InitBalance of
+        {variant, [0, 1], 0, {}} -> true;
+        {variant, [0, 1], 1, {X}} -> X >= 0
+    end andalso size(Name) > 0.
 
 %% Would be nice with a pretty printer fate representation -> Sophia
 %% 'None' or 'Some(9)'
@@ -53,9 +57,18 @@ balances_post(ChainState, #state{balances = Balances}, [], Res) ->
 owner_post(ChainState, _ContractState, [], Res) ->
     eq(creator(ChainState), Res).
 
-transfer_args(ChainState) ->
-    [gen_account(ChainState), frequency([{0, int()}, {49, nat()}])].
+%% If we want to modify the test distribution, we may introduce our own generators
+%% Note that we should generate FATE data
+%% transfer_args(ChainState) ->
+%%     [gen_account(ChainState), frequency([{0, fate_int()}, {49, fate_nat()}])].
 
+%% If we want to test all arguments, but know some result in an error, we
+%% can use _valid to flag this
+transfer_valid(_, [_To, Amount]) ->
+    Amount >= 0.
+
+
+%% If we need the contract state for validation, we must add a postcondition
 transfer_post(ChainState, #state{balances = Balances}, [To, Amount], Res) ->
     case Res of
         {revert, "BALANCE_ACCOUNT_NOT_EXISTENT"} ->
@@ -67,6 +80,11 @@ transfer_post(ChainState, #state{balances = Balances}, [To, Amount], Res) ->
         {tuple, {}} -> true;
         _ -> eq(Res, ok)
     end.
+
+%% We can collect features of the things we have tested
+transfer_features(_S, _, _Args, Res) ->
+    [{transfer, Res}].
+
 
 %% -- invariant
 
